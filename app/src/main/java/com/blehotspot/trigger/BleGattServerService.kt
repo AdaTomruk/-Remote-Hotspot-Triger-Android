@@ -42,6 +42,8 @@ class BleGattServerService : Service() {
         private const val NOTIFICATION_ID = 1
 
         // Custom UUID for the Hotspot Control Service
+        // Note: Consider generating unique UUIDs for production use to avoid conflicts
+        // Use a UUID generator like https://www.uuidgenerator.net/
         val SERVICE_UUID: UUID = UUID.fromString("12345678-1234-5678-1234-567812345678")
         // Characteristic UUID for hotspot commands
         val COMMAND_CHARACTERISTIC_UUID: UUID = UUID.fromString("12345678-1234-5678-1234-567812345679")
@@ -49,6 +51,9 @@ class BleGattServerService : Service() {
         // Command values
         const val COMMAND_ENABLE_HOTSPOT: Byte = 0x01
         const val COMMAND_DISABLE_HOTSPOT: Byte = 0x00
+
+        // Valid command set for input validation
+        private val VALID_COMMANDS = setOf(COMMAND_ENABLE_HOTSPOT, COMMAND_DISABLE_HOTSPOT)
     }
 
     private val binder = LocalBinder()
@@ -314,6 +319,13 @@ class BleGattServerService : Service() {
 
     private fun handleCommand(command: Byte) {
         Log.d(TAG, "Received command: $command")
+        
+        // Validate command before processing
+        if (command !in VALID_COMMANDS) {
+            Log.w(TAG, "Invalid command received: $command. Expected ${VALID_COMMANDS.joinToString()}")
+            return
+        }
+        
         when (command) {
             COMMAND_ENABLE_HOTSPOT -> {
                 Log.d(TAG, "Enable hotspot command received")
@@ -322,9 +334,6 @@ class BleGattServerService : Service() {
             COMMAND_DISABLE_HOTSPOT -> {
                 Log.d(TAG, "Disable hotspot command received")
                 hotspotCommandListener?.onHotspotDisable()
-            }
-            else -> {
-                Log.w(TAG, "Unknown command: $command")
             }
         }
     }

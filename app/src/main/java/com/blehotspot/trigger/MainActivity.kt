@@ -230,7 +230,7 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(action).apply {
                 putExtra(HotspotConstants.EXTRA_HOTSPOT_STATE, enable)
                 // Add package name so Samsung Routines can identify the source
-                setPackage("com.samsung.android.app.routines")
+                setPackage(HotspotConstants.SAMSUNG_ROUTINES_PACKAGE)
             }
 
             sendBroadcast(intent)

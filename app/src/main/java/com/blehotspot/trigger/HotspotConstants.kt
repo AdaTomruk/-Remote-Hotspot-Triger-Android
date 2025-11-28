@@ -17,4 +17,7 @@ object HotspotConstants {
     
     // Extra key for hotspot state
     const val EXTRA_HOTSPOT_STATE = "hotspot_state"
+    
+    // Samsung Routines package name
+    const val SAMSUNG_ROUTINES_PACKAGE = "com.samsung.android.app.routines"
 }
