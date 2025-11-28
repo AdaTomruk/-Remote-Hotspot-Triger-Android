@@ -44,9 +44,9 @@ class BleGattServerService : Service() {
         // Custom UUID for the Hotspot Control Service
         // Note: Consider generating unique UUIDs for production use to avoid conflicts
         // Use a UUID generator like https://www.uuidgenerator.net/
-        val SERVICE_UUID: UUID = UUID.fromString("12345678-1234-5678-1234-567812345678")
+        val SERVICE_UUID: UUID = UUID.fromString("C15ABA22-C32C-4A01-A770-80B82782D92F")
         // Characteristic UUID for hotspot commands
-        val COMMAND_CHARACTERISTIC_UUID: UUID = UUID.fromString("12345678-1234-5678-1234-567812345679")
+        val COMMAND_CHARACTERISTIC_UUID: UUID = UUID.fromString("19A0B431-9E31-41C4-9DB0-D8EA70E81501")
 
         // Command values
         const val COMMAND_ENABLE_HOTSPOT: Byte = 0x01
