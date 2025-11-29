@@ -23,6 +23,40 @@ An Android Kotlin application that enables/disables mobile hotspot via Bluetooth
 4. The Android app receives the command and triggers the appropriate Samsung Routine
 5. Samsung Routines enables or disables the mobile hotspot
 
+## Hotspot Credential Sharing
+
+When you enable the hotspot via BLE command, the Android app will automatically:
+1. Enable the hotspot via Samsung Routines notification trigger
+2. Read the hotspot SSID and password
+3. Send the credentials back to the Mac/client via BLE notification
+4. The Mac can then automatically join the WiFi network
+
+### Credential Response Format
+
+The app sends credentials as a JSON string via BLE notification:
+```json
+{"ssid":"MyHotspot","password":"12345678"}
+```
+
+This allows the Mac app to automatically connect to the hotspot without manual entry.
+
+### How It Works (Technical Details)
+
+When Mac sends "Enable Hotspot" (0x01):
+1. Android receives BLE write request
+2. Android triggers Samsung Routine via notification
+3. Hotspot starts
+4. Android waits 3 seconds for hotspot to fully initialize
+5. Android reads hotspot SSID and password
+6. Android sends JSON credentials via BLE notification
+7. Mac receives notification and can join the WiFi network
+
+When Mac sends "Disable Hotspot" (0x00):
+1. Android receives BLE write request
+2. Android triggers Samsung Routine via notification
+3. Hotspot stops
+4. No credentials are sent
+
 ## BLE Protocol
 
 ### Service UUID
@@ -156,6 +190,8 @@ The app requires the following permissions:
 - `BLUETOOTH_CONNECT` (Android 12+)
 - `BLUETOOTH_SCAN` (Android 12+)
 - `ACCESS_FINE_LOCATION` (Required for BLE on older Android versions)
+- `ACCESS_WIFI_STATE` (Required for reading hotspot configuration)
+- `CHANGE_WIFI_STATE` (Required for reading hotspot configuration)
 - `FOREGROUND_SERVICE_CONNECTED_DEVICE`
 - `POST_NOTIFICATIONS` (Android 13+, required for trigger notifications)
 
@@ -175,6 +211,12 @@ The app requires the following permissions:
 - Ensure the Android device is advertising (server status shows "Running")
 - Check that the Mac's Bluetooth is enabled
 - Try moving devices closer together
+
+### Credentials not being received on Mac
+- Ensure the Mac has subscribed to notifications on the characteristic
+- Check Android logs for errors reading hotspot configuration
+- Verify WiFi permissions are granted to the app
+- On Android 11+, the app may need additional permissions to read hotspot config
 
 ## License
 

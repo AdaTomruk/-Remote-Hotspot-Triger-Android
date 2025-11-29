@@ -10,9 +10,11 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattServer
 import android.bluetooth.BluetoothGattServerCallback
 import android.bluetooth.BluetoothGattService
+import android.net.wifi.WifiManager
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
@@ -48,6 +50,9 @@ class BleGattServerService : Service() {
         // Characteristic UUID for hotspot commands
         val COMMAND_CHARACTERISTIC_UUID: UUID = UUID.fromString("19A0B431-9E31-41C4-9DB0-D8EA70E81501")
 
+        // Standard Client Characteristic Configuration Descriptor (CCCD) UUID
+        val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
         // Command values
         const val COMMAND_ENABLE_HOTSPOT: Byte = 0x01
         const val COMMAND_DISABLE_HOTSPOT: Byte = 0x00
@@ -64,6 +69,8 @@ class BleGattServerService : Service() {
     private var bluetoothLeAdvertiser: BluetoothLeAdvertiser? = null
     private var gattServer: BluetoothGattServer? = null
     private var isAdvertising = false
+    private var connectedDevice: BluetoothDevice? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     interface HotspotCommandListener {
         fun onHotspotEnable()
@@ -247,9 +254,19 @@ class BleGattServerService : Service() {
             val commandCharacteristic = BluetoothGattCharacteristic(
                 COMMAND_CHARACTERISTIC_UUID,
                 BluetoothGattCharacteristic.PROPERTY_WRITE or
-                        BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
-                BluetoothGattCharacteristic.PERMISSION_WRITE
+                        BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE or
+                        BluetoothGattCharacteristic.PROPERTY_READ or
+                        BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+                BluetoothGattCharacteristic.PERMISSION_WRITE or
+                        BluetoothGattCharacteristic.PERMISSION_READ
             )
+
+            // Add Client Characteristic Configuration Descriptor (CCCD) for notifications
+            val descriptor = BluetoothGattDescriptor(
+                CCCD_UUID,
+                BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
+            )
+            commandCharacteristic.addDescriptor(descriptor)
 
             service.addCharacteristic(commandCharacteristic)
             gattServer?.addService(service)
@@ -278,6 +295,37 @@ class BleGattServerService : Service() {
         override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
             val state = if (newState == BluetoothGatt.STATE_CONNECTED) "CONNECTED" else "DISCONNECTED"
             Log.d(TAG, "Device ${device?.address} $state")
+            
+            if (newState == BluetoothGatt.STATE_CONNECTED) {
+                connectedDevice = device
+            } else {
+                connectedDevice = null
+            }
+        }
+
+        override fun onDescriptorWriteRequest(
+            device: BluetoothDevice?,
+            requestId: Int,
+            descriptor: BluetoothGattDescriptor?,
+            preparedWrite: Boolean,
+            responseNeeded: Boolean,
+            offset: Int,
+            value: ByteArray?
+        ) {
+            if (responseNeeded && hasBluetoothPermissions()) {
+                try {
+                    gattServer?.sendResponse(
+                        device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        0,
+                        null
+                    )
+                    Log.d(TAG, "Descriptor write response sent")
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException sending descriptor response: ${e.message}")
+                }
+            }
         }
 
         override fun onCharacteristicWriteRequest(
@@ -290,8 +338,15 @@ class BleGattServerService : Service() {
             value: ByteArray?
         ) {
             if (characteristic?.uuid == COMMAND_CHARACTERISTIC_UUID && value != null && value.isNotEmpty()) {
-                handleCommand(value[0])
+                val command = value[0]
+                handleCommand(command)
 
+                // Send credentials after enabling hotspot
+                if (command == COMMAND_ENABLE_HOTSPOT) {
+                    sendHotspotCredentials()
+                }
+
+                // Always send acknowledgment response
                 if (responseNeeded && hasBluetoothPermissions()) {
                     try {
                         gattServer?.sendResponse(
@@ -301,8 +356,24 @@ class BleGattServerService : Service() {
                             0,
                             null
                         )
+                        Log.d(TAG, "Write response sent")
                     } catch (e: SecurityException) {
                         Log.e(TAG, "SecurityException sending response: ${e.message}")
+                    }
+                }
+            } else {
+                // Send error response for invalid requests
+                if (responseNeeded && hasBluetoothPermissions()) {
+                    try {
+                        gattServer?.sendResponse(
+                            device,
+                            requestId,
+                            BluetoothGatt.GATT_FAILURE,
+                            0,
+                            null
+                        )
+                    } catch (e: SecurityException) {
+                        Log.e(TAG, "SecurityException sending error response: ${e.message}")
                     }
                 }
             }
@@ -336,5 +407,158 @@ class BleGattServerService : Service() {
                 hotspotCommandListener?.onHotspotDisable()
             }
         }
+    }
+
+    /**
+     * Retrieves the current hotspot SSID and password.
+     * 
+     * For Android 11+ (API 30+): Uses the official softApConfiguration API.
+     * For Android 8.0-10 (API 26-29): Uses reflection to access getWifiApConfiguration().
+     * 
+     * Note: The reflection-based approach for older Android versions may not work on all
+     * devices or manufacturers. Samsung, Huawei, and other OEMs may have custom implementations.
+     * If credential retrieval fails, check the logs for specific errors and consider
+     * device-specific workarounds if needed.
+     * 
+     * @return Pair of (SSID, Password) or null if unable to retrieve
+     */
+    @Suppress("DEPRECATION")
+    private fun getHotspotCredentials(): Pair<String, String>? {
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                ?: return null
+            
+            // For Android 11+ (API 30+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val softApConfig = wifiManager.softApConfiguration
+                    val ssid = softApConfig.ssid
+                    val password = softApConfig.passphrase ?: ""
+                    
+                    if (!ssid.isNullOrEmpty()) {
+                        Log.d(TAG, "Retrieved hotspot credentials (API 30+): SSID=$ssid")
+                        return Pair(ssid, password)
+                    }
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException reading softApConfiguration - missing permissions", e)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error reading softApConfiguration", e)
+                }
+            } else {
+                // For older Android versions (API 26-29), use reflection
+                // Note: This approach may not work on all device manufacturers
+                try {
+                    val method = wifiManager.javaClass.getMethod("getWifiApConfiguration")
+                    val config = method.invoke(wifiManager)
+                    
+                    if (config != null) {
+                        val ssidField = config.javaClass.getDeclaredField("SSID")
+                        ssidField.isAccessible = true
+                        val ssid = ssidField.get(config) as? String
+                        
+                        val passwordField = config.javaClass.getDeclaredField("preSharedKey")
+                        passwordField.isAccessible = true
+                        val password = passwordField.get(config) as? String ?: ""
+                        
+                        if (!ssid.isNullOrEmpty()) {
+                            Log.d(TAG, "Retrieved hotspot credentials (reflection): SSID=$ssid")
+                            return Pair(ssid, password)
+                        }
+                    }
+                } catch (e: NoSuchMethodException) {
+                    Log.e(TAG, "getWifiApConfiguration method not found - device may have custom implementation", e)
+                } catch (e: NoSuchFieldException) {
+                    Log.e(TAG, "SSID or preSharedKey field not found - device may have custom implementation", e)
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException during reflection - missing permissions", e)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Reflection failed to get hotspot config", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting hotspot credentials", e)
+        }
+        
+        Log.w(TAG, "Unable to retrieve hotspot credentials")
+        return null
+    }
+
+    /**
+     * Sends hotspot credentials to the connected Mac device via BLE notification
+     */
+    private fun sendHotspotCredentials() {
+        val device = connectedDevice
+        if (device == null) {
+            Log.w(TAG, "No connected device to send credentials to")
+            return
+        }
+        
+        if (!hasBluetoothPermissions()) {
+            Log.e(TAG, "Missing Bluetooth permissions to send credentials")
+            return
+        }
+        
+        // Wait for hotspot to fully start before reading credentials
+        mainHandler.postDelayed({
+            val credentials = getHotspotCredentials()
+            
+            if (credentials != null) {
+                val (ssid, password) = credentials
+                
+                // Create JSON response with properly escaped strings
+                val jsonResponse = """{"ssid":"${escapeJsonString(ssid)}","password":"${escapeJsonString(password)}"}"""
+                val responseData = jsonResponse.toByteArray(Charsets.UTF_8)
+                
+                Log.d(TAG, "Sending credentials to Mac: SSID=$ssid")
+                
+                try {
+                    // Find the characteristic
+                    val service = gattServer?.getService(SERVICE_UUID)
+                    val characteristic = service?.getCharacteristic(COMMAND_CHARACTERISTIC_UUID)
+                    
+                    if (characteristic != null) {
+                        characteristic.value = responseData
+                        gattServer?.notifyCharacteristicChanged(device, characteristic, false)
+                        Log.d(TAG, "Credentials sent successfully")
+                    } else {
+                        Log.e(TAG, "Characteristic not found for sending credentials")
+                    }
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException sending credentials: ${e.message}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error sending credentials", e)
+                }
+            } else {
+                Log.e(TAG, "Failed to retrieve hotspot credentials")
+            }
+        }, 3000) // Wait 3 seconds for hotspot to fully start
+    }
+
+    /**
+     * Escapes a string for safe JSON encoding
+     * Handles backslash, quotes, and control characters
+     */
+    private fun escapeJsonString(input: String): String {
+        val sb = StringBuilder()
+        for (char in input) {
+            when (char) {
+                '\\' -> sb.append("\\\\")
+                '"' -> sb.append("\\\"")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                '\b' -> sb.append("\\b")
+                '\u000C' -> sb.append("\\f")
+                else -> {
+                    if (char.code < 32) {
+                        // Escape other control characters as unicode
+                        sb.append("\\u${String.format("%04x", char.code)}")
+                    } else {
+                        sb.append(char)
+                    }
+                }
+            }
+        }
+        return sb.toString()
     }
 }
