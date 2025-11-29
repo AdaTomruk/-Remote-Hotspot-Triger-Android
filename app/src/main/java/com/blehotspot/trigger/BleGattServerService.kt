@@ -70,6 +70,7 @@ class BleGattServerService : Service() {
     private var gattServer: BluetoothGattServer? = null
     private var isAdvertising = false
     private var connectedDevice: BluetoothDevice? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     interface HotspotCommandListener {
         fun onHotspotEnable()
@@ -409,7 +410,16 @@ class BleGattServerService : Service() {
     }
 
     /**
-     * Retrieves the current hotspot SSID and password
+     * Retrieves the current hotspot SSID and password.
+     * 
+     * For Android 11+ (API 30+): Uses the official softApConfiguration API.
+     * For Android 8.0-10 (API 26-29): Uses reflection to access getWifiApConfiguration().
+     * 
+     * Note: The reflection-based approach for older Android versions may not work on all
+     * devices or manufacturers. Samsung, Huawei, and other OEMs may have custom implementations.
+     * If credential retrieval fails, check the logs for specific errors and consider
+     * device-specific workarounds if needed.
+     * 
      * @return Pair of (SSID, Password) or null if unable to retrieve
      */
     @Suppress("DEPRECATION")
@@ -420,32 +430,47 @@ class BleGattServerService : Service() {
             
             // For Android 11+ (API 30+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val softApConfig = wifiManager.softApConfiguration
-                val ssid = softApConfig.ssid
-                val password = softApConfig.passphrase ?: ""
-                
-                if (!ssid.isNullOrEmpty()) {
-                    Log.d(TAG, "Retrieved hotspot credentials (API 30+): SSID=$ssid")
-                    return Pair(ssid, password)
+                try {
+                    val softApConfig = wifiManager.softApConfiguration
+                    val ssid = softApConfig.ssid
+                    val password = softApConfig.passphrase ?: ""
+                    
+                    if (!ssid.isNullOrEmpty()) {
+                        Log.d(TAG, "Retrieved hotspot credentials (API 30+): SSID=$ssid")
+                        return Pair(ssid, password)
+                    }
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException reading softApConfiguration - missing permissions", e)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error reading softApConfiguration", e)
                 }
             } else {
                 // For older Android versions (API 26-29), use reflection
+                // Note: This approach may not work on all device manufacturers
                 try {
                     val method = wifiManager.javaClass.getMethod("getWifiApConfiguration")
                     val config = method.invoke(wifiManager)
                     
-                    val ssidField = config?.javaClass?.getDeclaredField("SSID")
-                    ssidField?.isAccessible = true
-                    val ssid = ssidField?.get(config) as? String
-                    
-                    val passwordField = config?.javaClass?.getDeclaredField("preSharedKey")
-                    passwordField?.isAccessible = true
-                    val password = passwordField?.get(config) as? String ?: ""
-                    
-                    if (!ssid.isNullOrEmpty()) {
-                        Log.d(TAG, "Retrieved hotspot credentials (reflection): SSID=$ssid")
-                        return Pair(ssid, password)
+                    if (config != null) {
+                        val ssidField = config.javaClass.getDeclaredField("SSID")
+                        ssidField.isAccessible = true
+                        val ssid = ssidField.get(config) as? String
+                        
+                        val passwordField = config.javaClass.getDeclaredField("preSharedKey")
+                        passwordField.isAccessible = true
+                        val password = passwordField.get(config) as? String ?: ""
+                        
+                        if (!ssid.isNullOrEmpty()) {
+                            Log.d(TAG, "Retrieved hotspot credentials (reflection): SSID=$ssid")
+                            return Pair(ssid, password)
+                        }
                     }
+                } catch (e: NoSuchMethodException) {
+                    Log.e(TAG, "getWifiApConfiguration method not found - device may have custom implementation", e)
+                } catch (e: NoSuchFieldException) {
+                    Log.e(TAG, "SSID or preSharedKey field not found - device may have custom implementation", e)
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException during reflection - missing permissions", e)
                 } catch (e: Exception) {
                     Log.e(TAG, "Reflection failed to get hotspot config", e)
                 }
@@ -474,16 +499,14 @@ class BleGattServerService : Service() {
         }
         
         // Wait for hotspot to fully start before reading credentials
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        mainHandler.postDelayed({
             val credentials = getHotspotCredentials()
             
             if (credentials != null) {
                 val (ssid, password) = credentials
                 
-                // Create JSON response with escaped strings for safety
-                val escapedSsid = ssid.replace("\\", "\\\\").replace("\"", "\\\"")
-                val escapedPassword = password.replace("\\", "\\\\").replace("\"", "\\\"")
-                val jsonResponse = """{"ssid":"$escapedSsid","password":"$escapedPassword"}"""
+                // Create JSON response with properly escaped strings
+                val jsonResponse = """{"ssid":"${escapeJsonString(ssid)}","password":"${escapeJsonString(password)}"}"""
                 val responseData = jsonResponse.toByteArray(Charsets.UTF_8)
                 
                 Log.d(TAG, "Sending credentials to Mac: SSID=$ssid")
@@ -509,5 +532,33 @@ class BleGattServerService : Service() {
                 Log.e(TAG, "Failed to retrieve hotspot credentials")
             }
         }, 3000) // Wait 3 seconds for hotspot to fully start
+    }
+
+    /**
+     * Escapes a string for safe JSON encoding
+     * Handles backslash, quotes, and control characters
+     */
+    private fun escapeJsonString(input: String): String {
+        val sb = StringBuilder()
+        for (char in input) {
+            when (char) {
+                '\\' -> sb.append("\\\\")
+                '"' -> sb.append("\\\"")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                '\b' -> sb.append("\\b")
+                '\u000C' -> sb.append("\\f")
+                else -> {
+                    if (char.code < 32) {
+                        // Escape other control characters as unicode
+                        sb.append("\\u${String.format("%04x", char.code)}")
+                    } else {
+                        sb.append(char)
+                    }
+                }
+            }
+        }
+        return sb.toString()
     }
 }
