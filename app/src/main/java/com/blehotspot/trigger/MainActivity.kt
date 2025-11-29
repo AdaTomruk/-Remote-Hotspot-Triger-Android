@@ -194,7 +194,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun getRequiredPermissions(): List<String> {
         val permissions = mutableListOf<String>()
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissions.addAll(listOf(
                 Manifest.permission.BLUETOOTH_ADVERTISE,
@@ -208,12 +208,12 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.BLUETOOTH_ADMIN
             ))
         }
-        
+
         // Add POST_NOTIFICATIONS permission for Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-        
+
         return permissions
     }
 
