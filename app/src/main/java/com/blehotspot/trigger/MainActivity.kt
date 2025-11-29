@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
             bleService = binder.getService()
             serviceBound = true
             bleService?.setHotspotCommandListener(hotspotCommandListener)
+            bleService?.setConnectionStateListener(connectionStateListener)
             updateServiceStatus(true)
         }
 
@@ -64,6 +65,24 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 binding.tvLastCommand.text = getString(R.string.last_command_disable)
                 triggerSamsungRoutine(enable = false)
+            }
+        }
+    }
+    
+    private val connectionStateListener = object : BleGattServerService.ConnectionStateListener {
+        override fun onDeviceConnected(deviceAddress: String) {
+            runOnUiThread {
+                binding.tvStatus.text = getString(R.string.status_connected, deviceAddress)
+                binding.tvStatus.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_blue_dark))
+            }
+        }
+        
+        override fun onDeviceDisconnected(deviceAddress: String) {
+            runOnUiThread {
+                if (serviceBound) {
+                    binding.tvStatus.text = getString(R.string.status_running)
+                    binding.tvStatus.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark))
+                }
             }
         }
     }

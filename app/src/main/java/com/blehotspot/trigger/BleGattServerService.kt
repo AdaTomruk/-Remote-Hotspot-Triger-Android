@@ -28,7 +28,9 @@ import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import java.util.Collections
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * BLE GATT Server Service that advertises and handles connections from Mac clients.
@@ -58,16 +60,28 @@ class BleGattServerService : Service() {
 
     private val binder = LocalBinder()
     private var hotspotCommandListener: HotspotCommandListener? = null
+    private var connectionStateListener: ConnectionStateListener? = null
 
     private var bluetoothManager: BluetoothManager? = null
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var bluetoothLeAdvertiser: BluetoothLeAdvertiser? = null
     private var gattServer: BluetoothGattServer? = null
     private var isAdvertising = false
+    
+    // Store the last command value for read requests (thread-safe)
+    private val lastCommandValue = AtomicReference<ByteArray>(byteArrayOf(0x00))
+    
+    // Store connected devices for proper response handling (thread-safe)
+    private val connectedDevices: MutableSet<BluetoothDevice> = Collections.synchronizedSet(mutableSetOf())
 
     interface HotspotCommandListener {
         fun onHotspotEnable()
         fun onHotspotDisable()
+    }
+    
+    interface ConnectionStateListener {
+        fun onDeviceConnected(deviceAddress: String)
+        fun onDeviceDisconnected(deviceAddress: String)
     }
 
     inner class LocalBinder : Binder() {
@@ -102,6 +116,10 @@ class BleGattServerService : Service() {
 
     fun setHotspotCommandListener(listener: HotspotCommandListener?) {
         hotspotCommandListener = listener
+    }
+    
+    fun setConnectionStateListener(listener: ConnectionStateListener?) {
+        connectionStateListener = listener
     }
 
     private fun initializeBluetooth() {
@@ -244,11 +262,15 @@ class BleGattServerService : Service() {
                 BluetoothGattService.SERVICE_TYPE_PRIMARY
             )
 
+            // Command characteristic with read, write, and write-no-response properties
+            // Read property allows clients to verify the connection and read last state
             val commandCharacteristic = BluetoothGattCharacteristic(
                 COMMAND_CHARACTERISTIC_UUID,
-                BluetoothGattCharacteristic.PROPERTY_WRITE or
+                BluetoothGattCharacteristic.PROPERTY_READ or
+                        BluetoothGattCharacteristic.PROPERTY_WRITE or
                         BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
-                BluetoothGattCharacteristic.PERMISSION_WRITE
+                BluetoothGattCharacteristic.PERMISSION_READ or
+                        BluetoothGattCharacteristic.PERMISSION_WRITE
             )
 
             service.addCharacteristic(commandCharacteristic)
@@ -276,8 +298,50 @@ class BleGattServerService : Service() {
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
         override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
-            val state = if (newState == BluetoothGatt.STATE_CONNECTED) "CONNECTED" else "DISCONNECTED"
-            Log.d(TAG, "Device ${device?.address} $state")
+            val deviceAddress = device?.address ?: "unknown"
+            if (newState == BluetoothGatt.STATE_CONNECTED) {
+                Log.d(TAG, "Device $deviceAddress CONNECTED")
+                device?.let { connectedDevices.add(it) }
+                connectionStateListener?.onDeviceConnected(deviceAddress)
+            } else {
+                Log.d(TAG, "Device $deviceAddress DISCONNECTED")
+                device?.let { connectedDevices.remove(it) }
+                connectionStateListener?.onDeviceDisconnected(deviceAddress)
+            }
+        }
+        
+        override fun onCharacteristicReadRequest(
+            device: BluetoothDevice?,
+            requestId: Int,
+            offset: Int,
+            characteristic: BluetoothGattCharacteristic?
+        ) {
+            if (characteristic?.uuid == COMMAND_CHARACTERISTIC_UUID && hasBluetoothPermissions()) {
+                Log.d(TAG, "Read request from ${device?.address}")
+                try {
+                    gattServer?.sendResponse(
+                        device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        offset,
+                        lastCommandValue.get()
+                    )
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException sending read response: ${e.message}")
+                }
+            } else {
+                try {
+                    gattServer?.sendResponse(
+                        device,
+                        requestId,
+                        BluetoothGatt.GATT_FAILURE,
+                        0,
+                        null
+                    )
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException sending error response: ${e.message}")
+                }
+            }
         }
 
         override fun onCharacteristicWriteRequest(
@@ -289,7 +353,11 @@ class BleGattServerService : Service() {
             offset: Int,
             value: ByteArray?
         ) {
+            Log.d(TAG, "Write request from ${device?.address}, value: ${value?.contentToString()}")
+            
             if (characteristic?.uuid == COMMAND_CHARACTERISTIC_UUID && value != null && value.isNotEmpty()) {
+                // Store the command value for future read requests (thread-safe)
+                lastCommandValue.set(value.copyOf())
                 handleCommand(value[0])
 
                 if (responseNeeded && hasBluetoothPermissions()) {
@@ -304,6 +372,18 @@ class BleGattServerService : Service() {
                     } catch (e: SecurityException) {
                         Log.e(TAG, "SecurityException sending response: ${e.message}")
                     }
+                }
+            } else if (responseNeeded && hasBluetoothPermissions()) {
+                try {
+                    gattServer?.sendResponse(
+                        device,
+                        requestId,
+                        BluetoothGatt.GATT_FAILURE,
+                        0,
+                        null
+                    )
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException sending error response: ${e.message}")
                 }
             }
         }

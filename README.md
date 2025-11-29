@@ -27,12 +27,12 @@ An Android Kotlin application that enables/disables mobile hotspot via Bluetooth
 
 ### Service UUID
 ```
-12345678-1234-5678-1234-567812345678
+C15ABA22-C32C-4A01-A770-80B82782D92F
 ```
 
 ### Command Characteristic UUID
 ```
-12345678-1234-5678-1234-567812345679
+19A0B431-9E31-41C4-9DB0-D8EA70E81501
 ```
 
 ### Commands
@@ -80,8 +80,8 @@ class BLEHotspotClient: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private var peripheral: CBPeripheral?
     private var commandCharacteristic: CBCharacteristic?
     
-    let serviceUUID = CBUUID(string: "12345678-1234-5678-1234-567812345678")
-    let commandUUID = CBUUID(string: "12345678-1234-5678-1234-567812345679")
+    let serviceUUID = CBUUID(string: "C15ABA22-C32C-4A01-A770-80B82782D92F")
+    let commandUUID = CBUUID(string: "19A0B431-9E31-41C4-9DB0-D8EA70E81501")
     
     override init() {
         super.init()
