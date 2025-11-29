@@ -20,4 +20,15 @@ object HotspotConstants {
     
     // Samsung Routines package name
     const val SAMSUNG_ROUTINES_PACKAGE = "com.samsung.android.app.routines"
+    
+    // Notification constants for Samsung Routines trigger
+    const val ROUTINE_TRIGGER_CHANNEL_ID = "routine_trigger_channel"
+    const val ROUTINE_TRIGGER_CHANNEL_NAME = "Automation Triggers"
+    const val NOTIFICATION_ID_ENABLE = 1001
+    const val NOTIFICATION_ID_DISABLE = 1002
+    const val NOTIFICATION_TIMEOUT_MS = 1000L
+    
+    // Notification trigger keywords
+    const val TRIGGER_ENABLE_HOTSPOT = "ENABLE_HOTSPOT_TRIGGER"
+    const val TRIGGER_DISABLE_HOTSPOT = "DISABLE_HOTSPOT_TRIGGER"
 }
