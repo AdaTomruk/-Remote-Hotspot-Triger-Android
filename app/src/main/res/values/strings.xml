@@ -30,6 +30,8 @@
     <string name="notification_channel_description">Notification channel for BLE Hotspot Trigger service</string>
     <string name="notification_title">BLE Hotspot Trigger</string>
     <string name="notification_text">Listening for BLE commands…</string>
+    <string name="routine_trigger_channel_description">Silent notifications used to trigger Samsung Routines for hotspot control</string>
+    <string name="notification_hotspot_automation_title">Hotspot Automation</string>
     
     <!-- Error Messages -->
     <string name="ble_not_supported">BLE is not supported on this device</string>

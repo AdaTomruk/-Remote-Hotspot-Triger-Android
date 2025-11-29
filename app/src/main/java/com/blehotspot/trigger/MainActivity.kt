@@ -1,6 +1,8 @@
 package com.blehotspot.trigger
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.ComponentName
@@ -14,6 +16,7 @@ import android.os.IBinder
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.blehotspot.trigger.databinding.ActivityMainBinding
 
@@ -91,8 +94,29 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        createRoutineTriggerNotificationChannel()
         setupUI()
         checkBluetoothSupport()
+    }
+
+    /**
+     * Creates a notification channel for routine trigger notifications.
+     * Uses IMPORTANCE_LOW to avoid sound/vibration.
+     */
+    private fun createRoutineTriggerNotificationChannel() {
+        val channel = NotificationChannel(
+            HotspotConstants.ROUTINE_TRIGGER_CHANNEL_ID,
+            HotspotConstants.ROUTINE_TRIGGER_CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = getString(R.string.routine_trigger_channel_description)
+            setShowBadge(false)
+            enableVibration(false)
+            setSound(null, null)
+        }
+
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
     }
 
     private fun setupUI() {
@@ -169,19 +193,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getRequiredPermissions(): List<String> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            listOf(
+        val permissions = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.addAll(listOf(
                 Manifest.permission.BLUETOOTH_ADVERTISE,
                 Manifest.permission.BLUETOOTH_CONNECT,
                 Manifest.permission.BLUETOOTH_SCAN
-            )
+            ))
         } else {
-            listOf(
+            permissions.addAll(listOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.BLUETOOTH,
                 Manifest.permission.BLUETOOTH_ADMIN
-            )
+            ))
         }
+
+        // Add POST_NOTIFICATIONS permission for Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        return permissions
     }
 
     private fun startBleService() {
@@ -214,26 +247,35 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Triggers a Samsung Routine to enable or disable mobile hotspot.
-     * Samsung Routines can be configured to listen for specific intents
-     * and perform actions like toggling hotspot.
+     * Posts a silent notification with a specific keyword that Samsung Routines
+     * can detect and trigger actions based on.
      */
     private fun triggerSamsungRoutine(enable: Boolean) {
         try {
-            // Intent action for Samsung Routines integration
-            // The user needs to set up a Samsung Routine that listens for this broadcast
-            val action = if (enable) {
-                HotspotConstants.ACTION_ENABLE_HOTSPOT
+            val notificationId = if (enable) {
+                HotspotConstants.NOTIFICATION_ID_ENABLE
             } else {
-                HotspotConstants.ACTION_DISABLE_HOTSPOT
+                HotspotConstants.NOTIFICATION_ID_DISABLE
+            }
+            
+            val triggerKeyword = if (enable) {
+                HotspotConstants.TRIGGER_ENABLE_HOTSPOT
+            } else {
+                HotspotConstants.TRIGGER_DISABLE_HOTSPOT
             }
 
-            val intent = Intent(action).apply {
-                putExtra(HotspotConstants.EXTRA_HOTSPOT_STATE, enable)
-                // Add package name so Samsung Routines can identify the source
-                setPackage(HotspotConstants.SAMSUNG_ROUTINES_PACKAGE)
-            }
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            
+            val notification = NotificationCompat.Builder(this, HotspotConstants.ROUTINE_TRIGGER_CHANNEL_ID)
+                .setContentTitle(getString(R.string.notification_hotspot_automation_title))
+                .setContentText(triggerKeyword)
+                .setSmallIcon(R.drawable.ic_bluetooth)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setAutoCancel(true)
+                .setTimeoutAfter(HotspotConstants.NOTIFICATION_TIMEOUT_MS)
+                .build()
 
-            sendBroadcast(intent)
+            notificationManager.notify(notificationId, notification)
 
             val message = if (enable) {
                 getString(R.string.hotspot_enable_triggered)

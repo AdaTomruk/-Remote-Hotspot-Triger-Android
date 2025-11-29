@@ -41,26 +41,32 @@ An Android Kotlin application that enables/disables mobile hotspot via Bluetooth
 
 ## Samsung Routines Setup
 
-Before using this app, you need to set up Samsung Routines on your device:
+Before using this app, you need to set up Samsung Routines on your device. This app uses the **Notification Bridge** method which is compatible with newer Samsung devices.
 
-### For Enabling Hotspot:
+### Enable Hotspot Routine:
 1. Open **Samsung Routines** app
 2. Create a new routine
-3. Set **If** condition: `Receive notification` → Select this app → Notification contains "Enable"
+3. Set **If** condition: `Notification received` → App: "BLE Hotspot Trigger" → Content contains "ENABLE_HOTSPOT_TRIGGER"
 4. Set **Then** action: `Mobile hotspot` → Turn on
 5. Save and enable the routine
 
-### For Disabling Hotspot:
+### Disable Hotspot Routine:
 1. Create another routine
-2. Set **If** condition: `Receive notification` → Select this app → Notification contains "Disable"
+2. Set **If** condition: `Notification received` → App: "BLE Hotspot Trigger" → Content contains "DISABLE_HOTSPOT_TRIGGER"
 3. Set **Then** action: `Mobile hotspot` → Turn off
 4. Save and enable the routine
 
-### Alternative Setup (Broadcast-based):
-If your Samsung Routines version supports custom broadcasts:
-1. Set **If** condition to receive broadcast with action:
-   - Enable: `com.blehotspot.trigger.ENABLE_HOTSPOT`
-   - Disable: `com.blehotspot.trigger.DISABLE_HOTSPOT`
+### How the Notification Bridge Works
+
+When a BLE command is received:
+1. The app posts a silent notification with the keyword "ENABLE_HOTSPOT_TRIGGER" or "DISABLE_HOTSPOT_TRIGGER"
+2. The notification auto-dismisses after 1 second
+3. Samsung Routines detects the notification content and triggers the configured action
+4. User sees a toast message confirming the trigger
+
+### Note on Permissions (Android 13+)
+
+On Android 13 and above, you'll need to grant notification permission when prompted. This is required for the app to post the trigger notifications that Samsung Routines will detect.
 
 ## Mac Client Example (Swift)
 
@@ -151,6 +157,7 @@ The app requires the following permissions:
 - `BLUETOOTH_SCAN` (Android 12+)
 - `ACCESS_FINE_LOCATION` (Required for BLE on older Android versions)
 - `FOREGROUND_SERVICE_CONNECTED_DEVICE`
+- `POST_NOTIFICATIONS` (Android 13+, required for trigger notifications)
 
 ## Troubleshooting
 
