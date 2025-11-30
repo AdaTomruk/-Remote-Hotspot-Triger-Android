@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -13,12 +15,16 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.blehotspot.trigger.databinding.ActivityMainBinding
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * MainActivity for BLE Hotspot Trigger app.
@@ -30,11 +36,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var bleService: BleGattServerService? = null
     private var serviceBound = false
+    private var isPasswordVisible = false
+    private var currentPassword: String = ""
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothManager.adapter
     }
+
+    private val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -43,6 +53,7 @@ class MainActivity : AppCompatActivity() {
             serviceBound = true
             bleService?.setHotspotCommandListener(hotspotCommandListener)
             updateServiceStatus(true)
+            refreshCredentialsDisplay()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -64,6 +75,29 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 binding.tvLastCommand.text = getString(R.string.last_command_disable)
                 triggerSamsungRoutine(enable = false)
+            }
+        }
+
+        override fun onCredentialsSent(ssid: String) {
+            runOnUiThread {
+                val timestamp = dateFormat.format(Date())
+                binding.tvCredentialStatus.text = getString(R.string.credentials_sent_success, ssid)
+                binding.tvCredentialStatus.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_green_dark))
+                binding.tvCredentialStatus.visibility = View.VISIBLE
+                binding.tvLastAction.text = getString(R.string.last_action_time, timestamp)
+                Toast.makeText(this@MainActivity, getString(R.string.toast_credentials_sent, ssid), Toast.LENGTH_SHORT).show()
+                refreshCredentialsDisplay()
+            }
+        }
+
+        override fun onCredentialSendFailed(error: String) {
+            runOnUiThread {
+                val timestamp = dateFormat.format(Date())
+                binding.tvCredentialStatus.text = getString(R.string.credentials_send_failed, error)
+                binding.tvCredentialStatus.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark))
+                binding.tvCredentialStatus.visibility = View.VISIBLE
+                binding.tvLastAction.text = getString(R.string.last_action_time, timestamp)
+                Toast.makeText(this@MainActivity, getString(R.string.toast_credentials_failed), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -136,7 +170,89 @@ class MainActivity : AppCompatActivity() {
             triggerSamsungRoutine(enable = false)
         }
 
+        // Credential preview section
+        binding.btnTogglePassword.setOnClickListener {
+            togglePasswordVisibility()
+        }
+
+        binding.btnCopyPassword.setOnClickListener {
+            copyPasswordToClipboard()
+        }
+
+        binding.btnRefreshCredentials.setOnClickListener {
+            refreshCredentialsDisplay()
+        }
+
         updateServiceStatus(false)
+        updatePasswordVisibilityUI()
+    }
+
+    /**
+     * Refreshes the credential display from the current hotspot configuration.
+     */
+    private fun refreshCredentialsDisplay() {
+        val credentials = bleService?.getCurrentHotspotCredentials()
+        
+        if (credentials != null) {
+            val (ssid, password) = credentials
+            binding.tvCurrentSsid.text = ssid
+            currentPassword = password
+            updatePasswordDisplay()
+            binding.cardCredentials.visibility = View.VISIBLE
+        } else {
+            binding.tvCurrentSsid.text = getString(R.string.credentials_not_available)
+            binding.tvCurrentPassword.text = getString(R.string.password_placeholder)
+            currentPassword = ""
+            binding.cardCredentials.visibility = View.VISIBLE
+        }
+    }
+
+    /**
+     * Toggles the visibility of the password field.
+     */
+    private fun togglePasswordVisibility() {
+        isPasswordVisible = !isPasswordVisible
+        updatePasswordVisibilityUI()
+        updatePasswordDisplay()
+    }
+
+    /**
+     * Updates the password visibility button and display.
+     */
+    private fun updatePasswordVisibilityUI() {
+        if (isPasswordVisible) {
+            binding.btnTogglePassword.text = getString(R.string.hide_password)
+        } else {
+            binding.btnTogglePassword.text = getString(R.string.show_password)
+        }
+    }
+
+    /**
+     * Updates the password display based on visibility state.
+     */
+    private fun updatePasswordDisplay() {
+        if (currentPassword.isEmpty()) {
+            binding.tvCurrentPassword.text = getString(R.string.password_placeholder)
+        } else if (isPasswordVisible) {
+            binding.tvCurrentPassword.text = currentPassword
+        } else {
+            binding.tvCurrentPassword.text = "•".repeat(currentPassword.length.coerceAtMost(16))
+        }
+    }
+
+    /**
+     * Copies the current password to the clipboard.
+     */
+    private fun copyPasswordToClipboard() {
+        if (currentPassword.isEmpty()) {
+            Toast.makeText(this, R.string.no_password_to_copy, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("Hotspot Password", currentPassword)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(this, R.string.password_copied, Toast.LENGTH_SHORT).show()
     }
 
     private fun checkBluetoothSupport() {
