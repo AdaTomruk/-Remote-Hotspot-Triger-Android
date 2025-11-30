@@ -33,6 +33,10 @@ import java.util.Locale
  */
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val MAX_DISPLAYED_PASSWORD_LENGTH = 16
+    }
+
     private lateinit var binding: ActivityMainBinding
     private var bleService: BleGattServerService? = null
     private var serviceBound = false
@@ -236,7 +240,7 @@ class MainActivity : AppCompatActivity() {
         } else if (isPasswordVisible) {
             binding.tvCurrentPassword.text = currentPassword
         } else {
-            binding.tvCurrentPassword.text = "•".repeat(currentPassword.length.coerceAtMost(16))
+            binding.tvCurrentPassword.text = "•".repeat(currentPassword.length.coerceAtMost(MAX_DISPLAYED_PASSWORD_LENGTH))
         }
     }
 

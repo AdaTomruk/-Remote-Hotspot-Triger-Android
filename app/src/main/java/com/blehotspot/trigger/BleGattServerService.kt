@@ -500,7 +500,7 @@ class BleGattServerService : Service() {
 
     /**
      * Sends hotspot credentials to the connected Mac device via BLE notification.
-     * Uses retry logic with exponential backoff (3s, 6s, 9s) for robustness.
+     * Uses retry logic with linear backoff (3s, 6s, 9s) for robustness.
      */
     private fun sendHotspotCredentials() {
         Log.d(TAG, "Starting credential sending process with retry logic")
@@ -509,12 +509,12 @@ class BleGattServerService : Service() {
 
     /**
      * Sends hotspot credentials with retry logic.
-     * Implements exponential backoff: 3s, 6s, 9s delays.
+     * Implements linear backoff: 3s, 6s, 9s delays.
      * 
      * @param attempt Current attempt number (1-based)
      */
     private fun sendHotspotCredentialsWithRetry(attempt: Int) {
-        val delay = attempt * BASE_RETRY_DELAY_MS // 3s, 6s, 9s
+        val delay = attempt * BASE_RETRY_DELAY_MS // 3s, 6s, 9s (linear backoff)
         
         Log.d(TAG, "Scheduling credential retrieval attempt $attempt/$MAX_RETRY_ATTEMPTS with ${delay}ms delay")
         

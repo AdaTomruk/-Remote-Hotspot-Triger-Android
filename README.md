@@ -64,7 +64,7 @@ The Android app implements retry logic to ensure credentials are sent reliably:
 - **Attempt 2**: Waits 6 seconds (if first attempt fails)
 - **Attempt 3**: Waits 9 seconds (if second attempt fails)
 
-This exponential backoff ensures credentials are captured even if the hotspot takes longer to initialize on some devices.
+This linear backoff (3-second increments) ensures credentials are captured even if the hotspot takes longer to initialize on some devices.
 
 ### Credential Validation
 
