@@ -14,6 +14,28 @@
     <string name="last_command_none">Last command: None</string>
     <string name="last_command_enable">Last command: Enable Hotspot</string>
     <string name="last_command_disable">Last command: Disable Hotspot</string>
+    <string name="last_action_none">Last action: None</string>
+    <string name="last_action_time">Last action: %1$s</string>
+    
+    <!-- Credential Status -->
+    <string name="credentials_sent_success">✓ Credentials sent: %1$s</string>
+    <string name="credentials_send_failed">✗ Failed to send credentials: %1$s</string>
+    <string name="toast_credentials_sent">WiFi credentials sent to Mac (%1$s)</string>
+    <string name="toast_credentials_failed">Failed to send credentials to Mac</string>
+    
+    <!-- Credential Preview -->
+    <string name="credential_preview_title">Current Hotspot Credentials</string>
+    <string name="credential_preview_description">These credentials will be sent to your Mac when the hotspot is enabled. Mac users will need to manually paste the password.</string>
+    <string name="ssid_label">SSID:</string>
+    <string name="password_label">Password:</string>
+    <string name="credentials_not_available">Not available</string>
+    <string name="password_placeholder">••••••••</string>
+    <string name="show_password">Show</string>
+    <string name="hide_password">Hide</string>
+    <string name="copy_password">Copy</string>
+    <string name="refresh_credentials">Refresh Credentials</string>
+    <string name="no_password_to_copy">No password available to copy</string>
+    <string name="password_copied">Password copied to clipboard</string>
     
     <!-- Test Section -->
     <string name="test_section_label">Test Samsung Routines</string>
@@ -24,6 +46,7 @@
     <string name="ble_info_title">BLE Connection Info</string>
     <string name="ble_info_service_uuid">Service UUID: C15ABA22-C32C-4A01-A770-80B82782D92</string>
     <string name="ble_info_commands">Commands: 0x01 = Enable, 0x00 = Disable</string>
+    <string name="mac_clipboard_info">Note: Mac cannot auto-join WiFi due to macOS limitations. The password will be copied to clipboard on your Mac for manual entry.</string>
     
     <!-- Notifications -->
     <string name="notification_channel_name">BLE Hotspot Service</string>

@@ -30,6 +30,7 @@ import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.util.UUID
 
 /**
@@ -59,6 +60,18 @@ class BleGattServerService : Service() {
 
         // Valid command set for input validation
         private val VALID_COMMANDS = setOf(COMMAND_ENABLE_HOTSPOT, COMMAND_DISABLE_HOTSPOT)
+
+        // Credential retry constants
+        private const val MAX_RETRY_ATTEMPTS = 3
+        private const val BASE_RETRY_DELAY_MS = 3000L
+        private const val MIN_PASSWORD_LENGTH = 8
+        private const val MAX_SSID_LENGTH = 32
+
+        // Broadcast action for credential send status
+        const val ACTION_CREDENTIAL_STATUS = "com.blehotspot.trigger.CREDENTIAL_STATUS"
+        const val EXTRA_CREDENTIAL_SUCCESS = "credential_success"
+        const val EXTRA_CREDENTIAL_SSID = "credential_ssid"
+        const val EXTRA_CREDENTIAL_ERROR = "credential_error"
     }
 
     private val binder = LocalBinder()
@@ -75,6 +88,8 @@ class BleGattServerService : Service() {
     interface HotspotCommandListener {
         fun onHotspotEnable()
         fun onHotspotDisable()
+        fun onCredentialsSent(ssid: String)
+        fun onCredentialSendFailed(error: String)
     }
 
     inner class LocalBinder : Binder() {
@@ -484,54 +499,185 @@ class BleGattServerService : Service() {
     }
 
     /**
-     * Sends hotspot credentials to the connected Mac device via BLE notification
+     * Sends hotspot credentials to the connected Mac device via BLE notification.
+     * Uses retry logic with linear backoff (3s, 6s, 9s) for robustness.
      */
     private fun sendHotspotCredentials() {
-        val device = connectedDevice
-        if (device == null) {
-            Log.w(TAG, "No connected device to send credentials to")
-            return
-        }
+        Log.d(TAG, "Starting credential sending process with retry logic")
+        sendHotspotCredentialsWithRetry(attempt = 1)
+    }
+
+    /**
+     * Sends hotspot credentials with retry logic.
+     * Implements linear backoff: 3s, 6s, 9s delays.
+     * 
+     * @param attempt Current attempt number (1-based)
+     */
+    private fun sendHotspotCredentialsWithRetry(attempt: Int) {
+        val delay = attempt * BASE_RETRY_DELAY_MS // 3s, 6s, 9s (linear backoff)
         
-        if (!hasBluetoothPermissions()) {
-            Log.e(TAG, "Missing Bluetooth permissions to send credentials")
-            return
-        }
+        Log.d(TAG, "Scheduling credential retrieval attempt $attempt/$MAX_RETRY_ATTEMPTS with ${delay}ms delay")
         
-        // Wait for hotspot to fully start before reading credentials
         mainHandler.postDelayed({
+            val device = connectedDevice
+            if (device == null) {
+                Log.w(TAG, "No connected device to send credentials to")
+                notifyCredentialSendFailure("No connected device")
+                return@postDelayed
+            }
+            
+            if (!hasBluetoothPermissions()) {
+                Log.e(TAG, "Missing Bluetooth permissions to send credentials")
+                notifyCredentialSendFailure("Missing Bluetooth permissions")
+                return@postDelayed
+            }
+            
             val credentials = getHotspotCredentials()
             
-            if (credentials != null) {
-                val (ssid, password) = credentials
+            if (credentials != null && validateCredentials(credentials)) {
+                sendCredentialsViaBLE(device, credentials)
+            } else if (attempt < MAX_RETRY_ATTEMPTS) {
+                val reason = if (credentials == null) "credentials not available" else "credentials validation failed"
+                Log.w(TAG, "Credentials not ready ($reason), retry $attempt/$MAX_RETRY_ATTEMPTS")
+                sendHotspotCredentialsWithRetry(attempt + 1)
+            } else {
+                val errorMsg = "Failed to retrieve valid credentials after $MAX_RETRY_ATTEMPTS attempts"
+                Log.e(TAG, errorMsg)
+                notifyCredentialSendFailure(errorMsg)
+            }
+        }, delay)
+    }
+
+    /**
+     * Validates hotspot credentials before sending.
+     * 
+     * @param credentials Pair of (SSID, Password)
+     * @return true if credentials are valid for sending
+     */
+    private fun validateCredentials(credentials: Pair<String, String>): Boolean {
+        val (ssid, password) = credentials
+        
+        // Check SSID
+        if (ssid.isEmpty()) {
+            Log.w(TAG, "Credential validation failed: SSID is empty")
+            return false
+        }
+        
+        if (ssid.length > MAX_SSID_LENGTH) {
+            Log.w(TAG, "Credential validation warning: SSID exceeds $MAX_SSID_LENGTH characters (${ssid.length})")
+            // Still allow sending, just log warning
+        }
+        
+        // Check password - WPA/WPA2 requires minimum 8 characters
+        if (password.length < MIN_PASSWORD_LENGTH) {
+            Log.w(TAG, "Credential validation failed: Password too short (${password.length} < $MIN_PASSWORD_LENGTH)")
+            return false
+        }
+        
+        // Check for properly formatted strings (no null characters)
+        if (ssid.contains('\u0000') || password.contains('\u0000')) {
+            Log.w(TAG, "Credential validation failed: Contains null characters")
+            return false
+        }
+        
+        Log.d(TAG, "Credential validation passed: SSID='$ssid', password length=${password.length}")
+        return true
+    }
+
+    /**
+     * Sends validated credentials to the connected device via BLE notification.
+     * 
+     * @param device The connected Bluetooth device
+     * @param credentials Pair of (SSID, Password)
+     */
+    private fun sendCredentialsViaBLE(device: BluetoothDevice, credentials: Pair<String, String>) {
+        val (ssid, password) = credentials
+        
+        // Create JSON response with properly escaped strings
+        val jsonResponse = """{"ssid":"${escapeJsonString(ssid)}","password":"${escapeJsonString(password)}"}"""
+        val responseData = jsonResponse.toByteArray(Charsets.UTF_8)
+        
+        Log.d(TAG, "Sending credentials to Mac: SSID=$ssid, JSON length=${responseData.size}")
+        
+        try {
+            // Find the characteristic
+            val service = gattServer?.getService(SERVICE_UUID)
+            val characteristic = service?.getCharacteristic(COMMAND_CHARACTERISTIC_UUID)
+            
+            if (characteristic != null) {
+                characteristic.value = responseData
+                val notificationSent = gattServer?.notifyCharacteristicChanged(device, characteristic, false)
                 
-                // Create JSON response with properly escaped strings
-                val jsonResponse = """{"ssid":"${escapeJsonString(ssid)}","password":"${escapeJsonString(password)}"}"""
-                val responseData = jsonResponse.toByteArray(Charsets.UTF_8)
-                
-                Log.d(TAG, "Sending credentials to Mac: SSID=$ssid")
-                
-                try {
-                    // Find the characteristic
-                    val service = gattServer?.getService(SERVICE_UUID)
-                    val characteristic = service?.getCharacteristic(COMMAND_CHARACTERISTIC_UUID)
-                    
-                    if (characteristic != null) {
-                        characteristic.value = responseData
-                        gattServer?.notifyCharacteristicChanged(device, characteristic, false)
-                        Log.d(TAG, "Credentials sent successfully")
-                    } else {
-                        Log.e(TAG, "Characteristic not found for sending credentials")
-                    }
-                } catch (e: SecurityException) {
-                    Log.e(TAG, "SecurityException sending credentials: ${e.message}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error sending credentials", e)
+                if (notificationSent == true) {
+                    Log.d(TAG, "Credentials sent successfully via BLE notification")
+                    notifyCredentialSendSuccess(ssid)
+                } else {
+                    Log.e(TAG, "BLE notification failed - notifyCharacteristicChanged returned false")
+                    notifyCredentialSendFailure("BLE notification delivery failed")
                 }
             } else {
-                Log.e(TAG, "Failed to retrieve hotspot credentials")
+                Log.e(TAG, "Characteristic not found for sending credentials")
+                notifyCredentialSendFailure("BLE characteristic not found")
             }
-        }, 3000) // Wait 3 seconds for hotspot to fully start
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException sending credentials: ${e.message}")
+            notifyCredentialSendFailure("Security exception: ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending credentials", e)
+            notifyCredentialSendFailure("Error: ${e.message}")
+        }
+    }
+
+    /**
+     * Notifies listeners that credentials were sent successfully.
+     * 
+     * @param ssid The SSID that was sent
+     */
+    private fun notifyCredentialSendSuccess(ssid: String) {
+        Log.d(TAG, "Notifying credential send success: SSID=$ssid")
+        
+        // Notify via listener callback
+        mainHandler.post {
+            hotspotCommandListener?.onCredentialsSent(ssid)
+        }
+        
+        // Also send local broadcast for other components
+        val intent = Intent(ACTION_CREDENTIAL_STATUS).apply {
+            putExtra(EXTRA_CREDENTIAL_SUCCESS, true)
+            putExtra(EXTRA_CREDENTIAL_SSID, ssid)
+        }
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+    }
+
+    /**
+     * Notifies listeners that credential sending failed.
+     * 
+     * @param error Description of the error
+     */
+    private fun notifyCredentialSendFailure(error: String) {
+        Log.e(TAG, "Notifying credential send failure: $error")
+        
+        // Notify via listener callback
+        mainHandler.post {
+            hotspotCommandListener?.onCredentialSendFailed(error)
+        }
+        
+        // Also send local broadcast for other components
+        val intent = Intent(ACTION_CREDENTIAL_STATUS).apply {
+            putExtra(EXTRA_CREDENTIAL_SUCCESS, false)
+            putExtra(EXTRA_CREDENTIAL_ERROR, error)
+        }
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+    }
+
+    /**
+     * Gets the current hotspot credentials.
+     * Can be called from MainActivity to display in UI.
+     * 
+     * @return Pair of (SSID, Password) or null if not available
+     */
+    fun getCurrentHotspotCredentials(): Pair<String, String>? {
+        return getHotspotCredentials()
     }
 
     /**
