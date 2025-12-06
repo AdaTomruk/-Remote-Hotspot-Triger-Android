@@ -25,6 +25,7 @@ import com.blehotspot.trigger.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var credentialsManager: HotspotCredentialsManager
     private var bleService: BleGattServerService? = null
     private var serviceBound = false
 
@@ -110,7 +111,10 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        credentialsManager = HotspotCredentialsManager(this)
+        
         setupUI()
+        loadSavedCredentials()
         checkBluetoothSupport()
     }
 
@@ -130,8 +134,31 @@ class MainActivity : AppCompatActivity() {
         binding.btnTestDisable.setOnClickListener {
             triggerSamsungRoutine(enable = false)
         }
+        
+        binding.btnSaveCredentials.setOnClickListener {
+            saveCredentials()
+        }
 
         updateServiceStatus(false)
+    }
+    
+    private fun loadSavedCredentials() {
+        val (ssid, password) = credentialsManager.getCredentials()
+        binding.etSsid.setText(ssid)
+        binding.etPassword.setText(password)
+    }
+    
+    private fun saveCredentials() {
+        val ssid = binding.etSsid.text?.toString()?.trim() ?: ""
+        val password = binding.etPassword.text?.toString()?.trim() ?: ""
+        
+        if (ssid.isEmpty()) {
+            Toast.makeText(this, R.string.credentials_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        credentialsManager.saveCredentials(ssid, password)
+        Toast.makeText(this, R.string.credentials_saved, Toast.LENGTH_SHORT).show()
     }
 
     private fun checkBluetoothSupport() {

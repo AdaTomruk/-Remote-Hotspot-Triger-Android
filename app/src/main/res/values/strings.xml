@@ -16,6 +16,14 @@
     <string name="last_command_enable">Last command: Enable Hotspot</string>
     <string name="last_command_disable">Last command: Disable Hotspot</string>
     
+    <!-- Hotspot Credentials -->
+    <string name="hotspot_credentials_label">Hotspot Credentials</string>
+    <string name="hotspot_ssid_hint">Hotspot SSID</string>
+    <string name="hotspot_password_hint">Hotspot Password</string>
+    <string name="save_credentials">Save Credentials</string>
+    <string name="credentials_saved">Credentials saved successfully</string>
+    <string name="credentials_empty">Please enter SSID</string>
+    
     <!-- Test Section -->
     <string name="test_section_label">Test Samsung Routines</string>
     <string name="test_enable">Enable Hotspot</string>
