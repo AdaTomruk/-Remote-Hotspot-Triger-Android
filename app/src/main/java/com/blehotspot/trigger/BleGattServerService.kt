@@ -352,7 +352,7 @@ class BleGattServerService : Service() {
             offset: Int,
             value: ByteArray?
         ) {
-            if (characteristic?.uuid == COMMAND_CHARACTERISTIC_UUID && value != null && value.isNotEmpty()) {
+            if (characteristic?.uuid == COMMAND_CHARACTERISTIC_UUID && value != null && value.size > 0) {
                 val command = value[0]
                 handleCommand(command)
 
@@ -450,7 +450,7 @@ class BleGattServerService : Service() {
                     val ssid = softApConfig?.ssid
                     val password = softApConfig?.passphrase ?: ""
                     
-                    if (ssid != null && ssid.isNotEmpty()) {
+                    if (!ssid.isNullOrEmpty()) {
                         Log.d(TAG, "Retrieved hotspot credentials (API 30+): SSID=$ssid")
                         return Pair(ssid, password)
                     }
@@ -475,7 +475,7 @@ class BleGattServerService : Service() {
                         passwordField.isAccessible = true
                         val password = passwordField.get(config) as? String ?: ""
                         
-                        if (ssid != null && ssid.isNotEmpty()) {
+                        if (!ssid.isNullOrEmpty()) {
                             Log.d(TAG, "Retrieved hotspot credentials (reflection): SSID=$ssid")
                             return Pair(ssid, password)
                         }
