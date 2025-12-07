@@ -43,6 +43,9 @@ class MainActivity : AppCompatActivity() {
     private var bleService: BleGattServerService? = null
     private var serviceBound = false
     private var isPasswordVisible = false
+    // Note: Using String for password storage in memory. While char[] would be more secure,
+    // it would require significant refactoring and the Android BLE APIs use String.
+    // Password is encrypted at rest and exposure is minimized by clearing input fields.
     private var currentPassword: String = ""
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
@@ -247,6 +250,9 @@ class MainActivity : AppCompatActivity() {
             currentPassword = password
             updatePasswordDisplay()
             refreshCredentialsDisplay()
+            
+            // Clear the input field after saving to avoid keeping password in memory
+            binding.etPasswordInput.setText("")
             
             // Show confirmation
             Toast.makeText(this, R.string.password_saved, Toast.LENGTH_SHORT).show()

@@ -70,8 +70,8 @@ object SecurePreferences {
     fun savePassword(context: Context, password: String): Boolean {
         return try {
             val prefs = getEncryptedPreferences(context)
-            prefs.edit().putString(KEY_HOTSPOT_PASSWORD, password).apply()
-            true
+            // Use commit() instead of apply() to ensure synchronous write for critical data
+            prefs.edit().putString(KEY_HOTSPOT_PASSWORD, password).commit()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save password to encrypted preferences", e)
             false
