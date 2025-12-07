@@ -16,6 +16,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -258,18 +259,22 @@ class MainActivity : AppCompatActivity() {
             // Show confirmation
             Toast.makeText(this, R.string.password_saved, Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Toast.makeText(this, "Failed to save password: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e("MainActivity", "Failed to save password", e)
+            Toast.makeText(this, "Failed to save password securely", Toast.LENGTH_LONG).show()
         }
     }
 
     /**
      * Loads the saved password from SharedPreferences.
+     * Sets the current password for credential display but doesn't populate the input field
+     * to avoid exposing the password in the UI.
      */
     private fun loadSavedPassword() {
         val savedPassword = getSavedPassword()
         if (savedPassword.isNotEmpty()) {
-            binding.etPasswordInput.setText(savedPassword)
             currentPassword = savedPassword
+            // Don't populate the input field to avoid exposing the password
+            // The password will be used for BLE transmission but not shown in the input
         }
     }
 

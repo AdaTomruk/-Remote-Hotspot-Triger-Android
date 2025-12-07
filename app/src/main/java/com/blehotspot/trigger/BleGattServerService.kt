@@ -450,11 +450,11 @@ class BleGattServerService : Service() {
         val password = getSavedPassword()
         
         if (password.isEmpty()) {
-            Log.w(TAG, "No saved password found in SharedPreferences")
+            Log.w(TAG, "Password not configured - user needs to set password in the app")
             return null
         }
         
-        Log.d(TAG, "Retrieved credentials: SSID=$ssid, password from SharedPreferences")
+        Log.d(TAG, "Retrieved credentials: SSID=$ssid, password from EncryptedSharedPreferences")
         return Pair(ssid, password)
     }
     
