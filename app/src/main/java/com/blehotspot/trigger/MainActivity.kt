@@ -11,6 +11,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +22,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.blehotspot.trigger.databinding.ActivityMainBinding
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -217,8 +220,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             binding.tvCurrentSsid.text = getString(R.string.credentials_not_available)
             binding.tvCurrentPassword.text = getString(R.string.password_placeholder)
-            currentPassword = savedPassword
-            updatePasswordDisplay()
+            currentPassword = ""
             binding.cardCredentials.visibility = View.VISIBLE
         }
     }
@@ -243,17 +245,21 @@ class MainActivity : AppCompatActivity() {
         // Clear error
         binding.tilPasswordInput.error = null
         
-        // Save to SharedPreferences
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_HOTSPOT_PASSWORD, password).apply()
-        
-        // Update current password and display
-        currentPassword = password
-        updatePasswordDisplay()
-        refreshCredentialsDisplay()
-        
-        // Show confirmation
-        Toast.makeText(this, R.string.password_saved, Toast.LENGTH_SHORT).show()
+        // Save to EncryptedSharedPreferences
+        try {
+            val prefs = getEncryptedSharedPreferences()
+            prefs.edit().putString(KEY_HOTSPOT_PASSWORD, password).apply()
+            
+            // Update current password and display
+            currentPassword = password
+            updatePasswordDisplay()
+            refreshCredentialsDisplay()
+            
+            // Show confirmation
+            Toast.makeText(this, R.string.password_saved, Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to save password: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     /**
@@ -271,8 +277,29 @@ class MainActivity : AppCompatActivity() {
      * Gets the saved password from SharedPreferences.
      */
     private fun getSavedPassword(): String {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_HOTSPOT_PASSWORD, "") ?: ""
+        return try {
+            val prefs = getEncryptedSharedPreferences()
+            prefs.getString(KEY_HOTSPOT_PASSWORD, "") ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+    
+    /**
+     * Gets or creates EncryptedSharedPreferences instance for secure password storage.
+     */
+    private fun getEncryptedSharedPreferences(): SharedPreferences {
+        val masterKey = MasterKey.Builder(this)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        
+        return EncryptedSharedPreferences.create(
+            this,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
     }
 
     /**
