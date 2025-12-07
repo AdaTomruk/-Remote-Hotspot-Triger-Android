@@ -22,7 +22,6 @@ import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.Build
@@ -32,8 +31,6 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import java.util.UUID
 
 /**
@@ -46,9 +43,6 @@ class BleGattServerService : Service() {
         private const val TAG = "BleGattServerService"
         private const val NOTIFICATION_CHANNEL_ID = "ble_hotspot_channel"
         private const val NOTIFICATION_ID = 1
-        
-        private const val PREFS_NAME = "HotspotPreferences"
-        private const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
 
         // Custom UUID for the Hotspot Control Service
         // Note: Consider generating unique UUIDs for production use to avoid conflicts
@@ -525,30 +519,7 @@ class BleGattServerService : Service() {
      * @return Password string or empty if not set
      */
     private fun getSavedPassword(): String {
-        return try {
-            val prefs = getEncryptedSharedPreferences()
-            prefs.getString(KEY_HOTSPOT_PASSWORD, "") ?: ""
-        } catch (e: Exception) {
-            Log.e(TAG, "Error reading password from EncryptedSharedPreferences", e)
-            ""
-        }
-    }
-    
-    /**
-     * Gets or creates EncryptedSharedPreferences instance for secure password storage.
-     */
-    private fun getEncryptedSharedPreferences(): SharedPreferences {
-        val masterKey = MasterKey.Builder(applicationContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        
-        return EncryptedSharedPreferences.create(
-            applicationContext,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        return SecurePreferences.getPassword(applicationContext)
     }
 
     /**
