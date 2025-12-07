@@ -35,6 +35,9 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val MAX_DISPLAYED_PASSWORD_LENGTH = 16
+        private const val PREFS_NAME = "HotspotPreferences"
+        private const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
+        private const val MIN_PASSWORD_LENGTH = 8
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -174,6 +177,14 @@ class MainActivity : AppCompatActivity() {
             triggerSamsungRoutine(enable = false)
         }
 
+        // Password input section
+        binding.btnSavePassword.setOnClickListener {
+            savePassword()
+        }
+
+        // Load saved password
+        loadSavedPassword()
+
         // Credential preview section
         binding.btnTogglePassword.setOnClickListener {
             togglePasswordVisibility()
@@ -195,20 +206,73 @@ class MainActivity : AppCompatActivity() {
      * Refreshes the credential display from the current hotspot configuration.
      */
     private fun refreshCredentialsDisplay() {
-        val credentials = bleService?.getCurrentHotspotCredentials()
+        val ssid = bleService?.getCurrentHotspotSSID()
+        val savedPassword = getSavedPassword()
         
-        if (credentials != null) {
-            val (ssid, password) = credentials
+        if (ssid != null) {
             binding.tvCurrentSsid.text = ssid
-            currentPassword = password
+            currentPassword = savedPassword
             updatePasswordDisplay()
             binding.cardCredentials.visibility = View.VISIBLE
         } else {
             binding.tvCurrentSsid.text = getString(R.string.credentials_not_available)
             binding.tvCurrentPassword.text = getString(R.string.password_placeholder)
-            currentPassword = ""
+            currentPassword = savedPassword
+            updatePasswordDisplay()
             binding.cardCredentials.visibility = View.VISIBLE
         }
+    }
+
+    /**
+     * Saves the password entered by the user to SharedPreferences.
+     */
+    private fun savePassword() {
+        val password = binding.etPasswordInput.text?.toString() ?: ""
+        
+        // Validate password
+        if (password.isEmpty()) {
+            binding.tilPasswordInput.error = getString(R.string.password_empty_error)
+            return
+        }
+        
+        if (password.length < MIN_PASSWORD_LENGTH) {
+            binding.tilPasswordInput.error = getString(R.string.password_too_short_error)
+            return
+        }
+        
+        // Clear error
+        binding.tilPasswordInput.error = null
+        
+        // Save to SharedPreferences
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_HOTSPOT_PASSWORD, password).apply()
+        
+        // Update current password and display
+        currentPassword = password
+        updatePasswordDisplay()
+        refreshCredentialsDisplay()
+        
+        // Show confirmation
+        Toast.makeText(this, R.string.password_saved, Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Loads the saved password from SharedPreferences.
+     */
+    private fun loadSavedPassword() {
+        val savedPassword = getSavedPassword()
+        if (savedPassword.isNotEmpty()) {
+            binding.etPasswordInput.setText(savedPassword)
+            currentPassword = savedPassword
+        }
+    }
+
+    /**
+     * Gets the saved password from SharedPreferences.
+     */
+    private fun getSavedPassword(): String {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_HOTSPOT_PASSWORD, "") ?: ""
     }
 
     /**

@@ -43,6 +43,9 @@ class BleGattServerService : Service() {
         private const val TAG = "BleGattServerService"
         private const val NOTIFICATION_CHANNEL_ID = "ble_hotspot_channel"
         private const val NOTIFICATION_ID = 1
+        
+        private const val PREFS_NAME = "HotspotPreferences"
+        private const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
 
         // Custom UUID for the Hotspot Control Service
         // Note: Consider generating unique UUIDs for production use to avoid conflicts
@@ -425,20 +428,40 @@ class BleGattServerService : Service() {
     }
 
     /**
-     * Retrieves the current hotspot SSID and password.
+     * Retrieves the current hotspot SSID from system and password from SharedPreferences.
      * 
-     * For Android 11+ (API 30+): Uses the official softApConfiguration API.
-     * For Android 8.0-10 (API 26-29): Uses reflection to access getWifiApConfiguration().
+     * For Android 11+ (API 30+): Uses the official softApConfiguration API to get SSID.
+     * For Android 8.0-10 (API 26-29): Uses reflection to access getWifiApConfiguration() for SSID.
+     * Password is always retrieved from SharedPreferences (user-inputted).
      * 
      * Note: The reflection-based approach for older Android versions may not work on all
      * devices or manufacturers. Samsung, Huawei, and other OEMs may have custom implementations.
-     * If credential retrieval fails, check the logs for specific errors and consider
+     * If SSID retrieval fails, check the logs for specific errors and consider
      * device-specific workarounds if needed.
      * 
      * @return Pair of (SSID, Password) or null if unable to retrieve
      */
     @Suppress("DEPRECATION")
     private fun getHotspotCredentials(): Pair<String, String>? {
+        val ssid = getHotspotSSID() ?: return null
+        val password = getSavedPassword()
+        
+        if (password.isEmpty()) {
+            Log.w(TAG, "No saved password found in SharedPreferences")
+            return null
+        }
+        
+        Log.d(TAG, "Retrieved credentials: SSID=$ssid, password from SharedPreferences")
+        return Pair(ssid, password)
+    }
+    
+    /**
+     * Retrieves the current hotspot SSID from system configuration.
+     * 
+     * @return SSID string or null if unable to retrieve
+     */
+    @Suppress("DEPRECATION")
+    private fun getHotspotSSID(): String? {
         try {
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 ?: return null
@@ -448,11 +471,10 @@ class BleGattServerService : Service() {
                 try {
                     val softApConfig = wifiManager.softApConfiguration
                     val ssid = softApConfig?.ssid
-                    val password = softApConfig?.passphrase ?: ""
                     
                     if (!ssid.isNullOrEmpty()) {
-                        Log.d(TAG, "Retrieved hotspot credentials (API 30+): SSID=$ssid")
-                        return Pair(ssid, password)
+                        Log.d(TAG, "Retrieved hotspot SSID (API 30+): SSID=$ssid")
+                        return ssid
                     }
                 } catch (e: SecurityException) {
                     Log.e(TAG, "SecurityException reading softApConfiguration - missing permissions", e)
@@ -471,19 +493,15 @@ class BleGattServerService : Service() {
                         ssidField.isAccessible = true
                         val ssid = ssidField.get(config) as? String
                         
-                        val passwordField = config.javaClass.getDeclaredField("preSharedKey")
-                        passwordField.isAccessible = true
-                        val password = passwordField.get(config) as? String ?: ""
-                        
                         if (!ssid.isNullOrEmpty()) {
-                            Log.d(TAG, "Retrieved hotspot credentials (reflection): SSID=$ssid")
-                            return Pair(ssid, password)
+                            Log.d(TAG, "Retrieved hotspot SSID (reflection): SSID=$ssid")
+                            return ssid
                         }
                     }
                 } catch (e: NoSuchMethodException) {
                     Log.e(TAG, "getWifiApConfiguration method not found - device may have custom implementation", e)
                 } catch (e: NoSuchFieldException) {
-                    Log.e(TAG, "SSID or preSharedKey field not found - device may have custom implementation", e)
+                    Log.e(TAG, "SSID field not found - device may have custom implementation", e)
                 } catch (e: SecurityException) {
                     Log.e(TAG, "SecurityException during reflection - missing permissions", e)
                 } catch (e: Exception) {
@@ -491,11 +509,21 @@ class BleGattServerService : Service() {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting hotspot credentials", e)
+            Log.e(TAG, "Error getting hotspot SSID", e)
         }
         
-        Log.w(TAG, "Unable to retrieve hotspot credentials")
+        Log.w(TAG, "Unable to retrieve hotspot SSID")
         return null
+    }
+    
+    /**
+     * Gets the saved password from SharedPreferences.
+     * 
+     * @return Password string or empty if not set
+     */
+    private fun getSavedPassword(): String {
+        val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_HOTSPOT_PASSWORD, "") ?: ""
     }
 
     /**
@@ -678,6 +706,16 @@ class BleGattServerService : Service() {
      */
     fun getCurrentHotspotCredentials(): Pair<String, String>? {
         return getHotspotCredentials()
+    }
+    
+    /**
+     * Gets the current hotspot SSID.
+     * Can be called from MainActivity to display in UI.
+     * 
+     * @return SSID string or null if not available
+     */
+    fun getCurrentHotspotSSID(): String? {
+        return getHotspotSSID()
     }
 
     /**
