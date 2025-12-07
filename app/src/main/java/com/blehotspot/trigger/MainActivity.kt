@@ -251,7 +251,7 @@ class MainActivity : AppCompatActivity() {
             // Show confirmation
             Toast.makeText(this, R.string.password_saved, Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Failed to save password securely", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.password_save_failed, Toast.LENGTH_LONG).show()
         }
     }
 

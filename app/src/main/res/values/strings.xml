@@ -45,6 +45,7 @@
     <string name="password_saved">Password saved successfully</string>
     <string name="password_empty_error">Password cannot be empty</string>
     <string name="password_too_short_error">Password must be at least 8 characters</string>
+    <string name="password_save_failed">Failed to save password securely</string>
     
     <!-- Test Section -->
     <string name="test_section_label">Test Samsung Routines</string>
