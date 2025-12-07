@@ -210,12 +210,14 @@ class MainActivity : AppCompatActivity() {
         val ssid = bleService?.getCurrentHotspotSSID()
         val savedPassword = getSavedPassword()
         
-        if (ssid != null) {
+        if (ssid != null && savedPassword.isNotEmpty()) {
+            // Both SSID and password available
             binding.tvCurrentSsid.text = ssid
             currentPassword = savedPassword
             updatePasswordDisplay()
             binding.cardCredentials.visibility = View.VISIBLE
         } else {
+            // Either SSID or password missing
             binding.tvCurrentSsid.text = getString(R.string.credentials_not_available)
             binding.tvCurrentPassword.text = getString(R.string.password_placeholder)
             currentPassword = ""
@@ -269,6 +271,8 @@ class MainActivity : AppCompatActivity() {
         val savedPassword = getSavedPassword()
         if (savedPassword.isNotEmpty()) {
             currentPassword = savedPassword
+            // Update UI to reflect that password is loaded
+            updatePasswordDisplay()
             // Don't populate the input field to avoid exposing the password
             // The password will be used for BLE transmission but not shown in the input
         }
