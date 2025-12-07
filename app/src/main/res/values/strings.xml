@@ -37,6 +37,16 @@
     <string name="no_password_to_copy">No password available to copy</string>
     <string name="password_copied">Password copied to clipboard</string>
     
+    <!-- Password Input -->
+    <string name="password_input_section_title">Hotspot Password Setup</string>
+    <string name="password_input_description">Enter your hotspot password that will be sent to your Mac. This password will be stored securely on your device.</string>
+    <string name="password_input_hint">Enter hotspot password</string>
+    <string name="save_password">Save Password</string>
+    <string name="password_saved">Password saved successfully</string>
+    <string name="password_empty_error">Password cannot be empty</string>
+    <string name="password_too_short_error">Password must be at least 8 characters</string>
+    <string name="password_save_failed">Failed to save password securely</string>
+    
     <!-- Test Section -->
     <string name="test_section_label">Test Samsung Routines</string>
     <string name="test_enable">Enable Hotspot</string>

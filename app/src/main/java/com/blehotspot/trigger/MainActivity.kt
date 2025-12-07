@@ -35,12 +35,16 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val MAX_DISPLAYED_PASSWORD_LENGTH = 16
+        private const val MIN_PASSWORD_LENGTH = 8
     }
 
     private lateinit var binding: ActivityMainBinding
     private var bleService: BleGattServerService? = null
     private var serviceBound = false
     private var isPasswordVisible = false
+    // Note: Using String for password storage in memory. While char[] would be more secure,
+    // it would require significant refactoring and the Android BLE APIs use String.
+    // Password is encrypted at rest and exposure is minimized by clearing input fields.
     private var currentPassword: String = ""
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
@@ -174,6 +178,14 @@ class MainActivity : AppCompatActivity() {
             triggerSamsungRoutine(enable = false)
         }
 
+        // Password input section
+        binding.btnSavePassword.setOnClickListener {
+            savePassword()
+        }
+
+        // Load saved password
+        loadSavedPassword()
+
         // Credential preview section
         binding.btnTogglePassword.setOnClickListener {
             togglePasswordVisibility()
@@ -195,20 +207,83 @@ class MainActivity : AppCompatActivity() {
      * Refreshes the credential display from the current hotspot configuration.
      */
     private fun refreshCredentialsDisplay() {
-        val credentials = bleService?.getCurrentHotspotCredentials()
+        // Safe call returns null if bleService is null
+        val ssid = bleService?.getCurrentHotspotSSID()
+        val savedPassword = getSavedPassword()
         
-        if (credentials != null) {
-            val (ssid, password) = credentials
+        if (ssid != null && savedPassword.isNotEmpty()) {
+            // Both SSID and password available
             binding.tvCurrentSsid.text = ssid
-            currentPassword = password
+            currentPassword = savedPassword
             updatePasswordDisplay()
             binding.cardCredentials.visibility = View.VISIBLE
         } else {
+            // Either SSID or password missing (or service not bound)
             binding.tvCurrentSsid.text = getString(R.string.credentials_not_available)
             binding.tvCurrentPassword.text = getString(R.string.password_placeholder)
             currentPassword = ""
             binding.cardCredentials.visibility = View.VISIBLE
         }
+    }
+
+    /**
+     * Saves the password entered by the user to SharedPreferences.
+     */
+    private fun savePassword() {
+        val password = binding.etPasswordInput.text?.toString() ?: ""
+        
+        // Validate password
+        if (password.isEmpty()) {
+            binding.tilPasswordInput.error = getString(R.string.password_empty_error)
+            return
+        }
+        
+        if (password.length < MIN_PASSWORD_LENGTH) {
+            binding.tilPasswordInput.error = getString(R.string.password_too_short_error)
+            return
+        }
+        
+        // Clear error
+        binding.tilPasswordInput.error = null
+        
+        // Save to EncryptedSharedPreferences
+        if (SecurePreferences.savePassword(this, password)) {
+            // Update current password and display
+            currentPassword = password
+            updatePasswordDisplay()
+            refreshCredentialsDisplay()
+            
+            // Clear the input field after saving to avoid keeping password in memory
+            binding.etPasswordInput.setText("")
+            
+            // Show confirmation
+            Toast.makeText(this, R.string.password_saved, Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, R.string.password_save_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Loads the saved password from SharedPreferences.
+     * Sets the current password for credential display but doesn't populate the input field
+     * to avoid exposing the password in the UI.
+     */
+    private fun loadSavedPassword() {
+        val savedPassword = getSavedPassword()
+        if (savedPassword.isNotEmpty()) {
+            currentPassword = savedPassword
+            // Update UI to reflect that password is loaded
+            updatePasswordDisplay()
+            // Don't populate the input field to avoid exposing the password
+            // The password will be used for BLE transmission but not shown in the input
+        }
+    }
+
+    /**
+     * Gets the saved password from SharedPreferences.
+     */
+    private fun getSavedPassword(): String {
+        return SecurePreferences.getPassword(this)
     }
 
     /**
