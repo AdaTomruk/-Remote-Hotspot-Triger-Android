@@ -16,32 +16,36 @@ object SecurePreferences {
     private const val PREFS_NAME = "HotspotPreferences"
     const val KEY_HOTSPOT_PASSWORD = "hotspot_password"
     
+    @Volatile
     private var encryptedPrefs: SharedPreferences? = null
     
     /**
      * Gets or creates an EncryptedSharedPreferences instance.
+     * Uses double-checked locking for thread-safe lazy initialization.
      * Uses AES256_GCM master key with AES256_SIV key encryption and AES256_GCM value encryption.
      * 
      * @param context Application context
      * @return Encrypted SharedPreferences instance
      * @throws Exception if encryption setup fails
      */
-    @Synchronized
     fun getEncryptedPreferences(context: Context): SharedPreferences {
-        if (encryptedPrefs == null) {
-            val masterKey = MasterKey.Builder(context.applicationContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            
-            encryptedPrefs = EncryptedSharedPreferences.create(
-                context.applicationContext,
-                PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
+        return encryptedPrefs ?: synchronized(this) {
+            encryptedPrefs ?: createEncryptedPreferences(context).also { encryptedPrefs = it }
         }
-        return encryptedPrefs!!
+    }
+    
+    private fun createEncryptedPreferences(context: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(context.applicationContext)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        
+        return EncryptedSharedPreferences.create(
+            context.applicationContext,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
     }
     
     /**

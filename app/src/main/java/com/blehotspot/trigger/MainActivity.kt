@@ -207,6 +207,7 @@ class MainActivity : AppCompatActivity() {
      * Refreshes the credential display from the current hotspot configuration.
      */
     private fun refreshCredentialsDisplay() {
+        // Safe call returns null if bleService is null
         val ssid = bleService?.getCurrentHotspotSSID()
         val savedPassword = getSavedPassword()
         
@@ -217,7 +218,7 @@ class MainActivity : AppCompatActivity() {
             updatePasswordDisplay()
             binding.cardCredentials.visibility = View.VISIBLE
         } else {
-            // Either SSID or password missing
+            // Either SSID or password missing (or service not bound)
             binding.tvCurrentSsid.text = getString(R.string.credentials_not_available)
             binding.tvCurrentPassword.text = getString(R.string.password_placeholder)
             currentPassword = ""
